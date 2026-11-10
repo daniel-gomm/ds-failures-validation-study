@@ -1,0 +1,643 @@
+<!-- title/description handled by Artifact publish; this is the page body -->
+<title>Judge Review Bench</title>
+<style>
+/*
+  Layout concept: two-rail workbench -- pipeline rail (mismatch-sorted, with
+  a mini per-FM heatmap glyph) on the left, code pane + FM verdict table on
+  the right, so disagreements between the human annotator and the LLM judge
+  are scannable before drilling into any one pipeline's code.
+*/
+:root {
+  --bg: #eef0f3;
+  --surface: #ffffff;
+  --surface-2: #f5f6f8;
+  --border: #d6dae1;
+  --text: #1a1d24;
+  --text-muted: #5c6472;
+  --text-faint: #8891a0;
+  --accent: #15646a;
+  --accent-soft: #e3eeee;
+  --ok: #2f8f5b;
+  --ok-soft: #e4f4ea;
+  --bad: #b8402f;
+  --bad-soft: #fbe9e6;
+  --warn: #9a6b11;
+  --warn-soft: #faf0dc;
+  --chip-na: #6b7280;
+  --chip-na-soft: #eceef1;
+  --code-bg: #f8f8f7;
+  --code-text: #292b2f;
+  --code-comment: #7d8795;
+  --code-keyword: #9a3f8f;
+  --code-string: #2f7a4b;
+  --code-number: #a8611c;
+  --code-def: #15646a;
+  --shadow: 0 1px 2px rgba(20, 24, 33, 0.06), 0 4px 14px rgba(20, 24, 33, 0.05);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14161b;
+    --surface: #1b1e25;
+    --surface-2: #20232b;
+    --border: #2d313b;
+    --text: #e7e9ee;
+    --text-muted: #9aa2b1;
+    --text-faint: #6c7484;
+    --accent: #4fb3b9;
+    --accent-soft: #1b3436;
+    --ok: #5cc98c;
+    --ok-soft: #173327;
+    --bad: #e2766a;
+    --bad-soft: #3a211f;
+    --warn: #e0b35c;
+    --warn-soft: #3a2f18;
+    --chip-na: #9aa2b1;
+    --chip-na-soft: #262933;
+    --code-bg: #15171d;
+    --code-text: #d7dae1;
+    --code-comment: #6c7484;
+    --code-keyword: #e39adc;
+    --code-string: #8fd1a4;
+    --code-number: #e3a564;
+    --code-def: #7fd4da;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14161b;
+  --surface: #1b1e25;
+  --surface-2: #20232b;
+  --border: #2d313b;
+  --text: #e7e9ee;
+  --text-muted: #9aa2b1;
+  --text-faint: #6c7484;
+  --accent: #4fb3b9;
+  --accent-soft: #1b3436;
+  --ok: #5cc98c;
+  --ok-soft: #173327;
+  --bad: #e2766a;
+  --bad-soft: #3a211f;
+  --warn: #e0b35c;
+  --warn-soft: #3a2f18;
+  --chip-na: #9aa2b1;
+  --chip-na-soft: #262933;
+  --code-bg: #15171d;
+  --code-text: #d7dae1;
+  --code-comment: #6c7484;
+  --code-keyword: #e39adc;
+  --code-string: #8fd1a4;
+  --code-number: #e3a564;
+  --code-def: #7fd4da;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "IBM Plex Sans", -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  padding-inline: 16px;
+}
+code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+.app { max-width: 1440px; margin: 0 auto; padding-block: 18px 32px; }
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.topbar h1 {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.topbar .sub { color: var(--text-muted); font-size: 13px; }
+.stat-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.stat-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.stat-chip b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.layout { display: flex; gap: 16px; align-items: flex-start; }
+
+.sidebar {
+  flex: 0 0 300px;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.sidebar-controls {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sidebar-controls select {
+  width: 100%;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.pipeline-list { max-height: 72vh; overflow-y: auto; }
+.pipeline-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 9px 12px;
+  cursor: pointer;
+  color: var(--text);
+  font: inherit;
+}
+.pipeline-item:hover { background: var(--surface-2); }
+.pipeline-item.active { background: var(--accent-soft); }
+.pipeline-item .pi-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.pipeline-item .pi-id {
+  font-size: 12.5px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pipeline-item .pi-mismatch {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+.pipeline-item .pi-tags {
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-bottom: 5px;
+}
+.dot-row { display: flex; gap: 2px; }
+.dot {
+  width: 9px; height: 9px; border-radius: 2px;
+  background: var(--chip-na-soft);
+}
+.dot[data-s="match"] { background: var(--ok); }
+.dot[data-s="mismatch"] { background: var(--bad); }
+.dot[data-s="unrated"] { background: var(--chip-na-soft); border: 1px solid var(--border); }
+
+.detail {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.meta-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 12px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+}
+.meta-card .task-id { font-weight: 650; font-size: 15px; }
+.meta-field { font-size: 12.5px; color: var(--text-muted); }
+.meta-field b { color: var(--text); font-weight: 600; }
+.meta-card .score-pill {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.meta-card .score-pill.clean { background: var(--ok-soft); color: var(--ok); }
+
+.panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 880px) {
+  .panes { grid-template-columns: 1fr; }
+  .sidebar { flex: 1 1 auto; }
+  .layout { flex-direction: column; }
+  .pipeline-list { max-height: 40vh; }
+}
+
+.pane {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  min-width: 0;
+}
+.pane-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.pane-header .count { margin-left: auto; font-size: 11px; color: var(--text-faint); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.copy-btn {
+  font: inherit;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.copy-btn:hover { color: var(--text); }
+
+.code-pane pre {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  max-height: 74vh;
+  overflow: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: pre;
+}
+.tok-kw { color: var(--code-keyword); font-weight: 600; }
+.tok-str { color: var(--code-string); }
+.tok-num { color: var(--code-number); }
+.tok-com { color: var(--code-comment); font-style: italic; }
+.tok-def { color: var(--code-def); font-weight: 600; }
+
+.fm-pane-body { max-height: 74vh; overflow-y: auto; }
+.fm-row {
+  border-bottom: 1px solid var(--border);
+  padding: 9px 14px;
+}
+.fm-row.is-mismatch { background: var(--bad-soft); }
+.fm-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.fm-id { font-size: 11px; color: var(--text-faint); font-weight: 650; flex: 0 0 auto; width: 34px; }
+.fm-label { font-size: 13px; flex: 1 1 auto; min-width: 0; }
+.fm-verdicts { display: flex; gap: 6px; flex: 0 0 auto; }
+.chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.chip[data-v="Present"] { background: var(--warn-soft); color: var(--warn); }
+.chip[data-v="Absent"] { background: var(--ok-soft); color: var(--ok); }
+.chip[data-v="N/A"] { background: var(--chip-na-soft); color: var(--chip-na); }
+.chip[data-v="Unsure"] { background: var(--accent-soft); color: var(--accent); }
+.match-mark { width: 14px; text-align: center; font-weight: 700; flex: 0 0 auto; }
+.match-mark.ok { color: var(--ok); }
+.match-mark.bad { color: var(--bad); }
+.fm-detail { display: none; padding-top: 8px; font-size: 12.5px; color: var(--text-muted); }
+.fm-detail.open { display: block; }
+.fm-detail .def { margin-bottom: 6px; }
+.fm-detail .reasoning { margin-bottom: 4px; }
+.fm-detail .ev {
+  margin-top: 4px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  overflow-x: auto;
+}
+.fm-detail .meta-row { font-size: 11.5px; color: var(--text-faint); margin-top: 4px; }
+.fm-detail .human-note { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
+
+.notes-card {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  padding: 10px 14px;
+}
+.notes-card b { color: var(--text); }
+
+.empty-state { padding: 40px 20px; text-align: center; color: var(--text-muted); }
+
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--text-muted); padding: 2px 14px 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend .sw { width: 9px; height: 9px; border-radius: 2px; }
+</style>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;650;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<div class="app">
+  <div class="topbar">
+    <div>
+      <h1>Judge Review Bench</h1>
+      <div class="sub">Compare any two raters (annotators or LLM judges), per pipeline &mdash; 15 failure modes, with source code. Pick the two raters in the sidebar.</div>
+    </div>
+    <div class="stat-chips" id="statChips"></div>
+  </div>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-controls">
+        <select id="pickA" title="Left rater"></select>
+        <select id="pickB" title="Right rater"></select>
+        <select id="filterAgent"><option value="">All agents</option></select>
+        <select id="filterModel"><option value="">All models</option></select>
+        <label class="toggle-row"><input type="checkbox" id="sortMismatch" checked> Sort by most disagreements</label>
+      </div>
+      <div class="pipeline-list" id="pipelineList"></div>
+    </aside>
+
+    <main class="detail" id="detail">
+      <div class="empty-state">Loading&hellip;</div>
+    </main>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var state = { data: [], raters: [], A: "EL", B: "", selected: null, agent: "", model: "", sortMismatch: true };
+  var byKey = {};
+
+  var PY_KEYWORDS = ["def","class","import","from","as","return","if","elif","else","for","while",
+    "try","except","finally","with","in","is","not","and","or","None","True","False","lambda",
+    "yield","pass","break","continue","global","nonlocal","assert","raise","del","async","await","self"];
+  var kwPattern = "\\b(" + PY_KEYWORDS.join("|") + ")\\b";
+  var TOKEN_RE = new RegExp(
+    "(#[^\\n]*)" +                                   // 1 comment
+    "|('''[\\s\\S]*?'''|\"\"\"[\\s\\S]*?\"\"\")" +    // 2 triple string
+    "|('(?:\\\\.|[^'\\\\\\n])*'|\"(?:\\\\.|[^\"\\\\\\n])*\")" + // 3 string
+    "|(\\b\\d+\\.?\\d*(?:[eE][+-]?\\d+)?\\b)" +       // 4 number
+    "|(\\bdef\\s+)([A-Za-z_][A-Za-z0-9_]*)" +         // 5/6 def name
+    "|(" + kwPattern + ")",                           // 7 keyword
+    "g"
+  );
+
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function highlightPython(code) {
+    var out = "";
+    var last = 0;
+    var m;
+    TOKEN_RE.lastIndex = 0;
+    while ((m = TOKEN_RE.exec(code)) !== null) {
+      if (m.index > last) out += esc(code.slice(last, m.index));
+      if (m[1] !== undefined) out += '<span class="tok-com">' + esc(m[1]) + "</span>";
+      else if (m[2] !== undefined) out += '<span class="tok-str">' + esc(m[2]) + "</span>";
+      else if (m[3] !== undefined) out += '<span class="tok-str">' + esc(m[3]) + "</span>";
+      else if (m[4] !== undefined) out += '<span class="tok-num">' + esc(m[4]) + "</span>";
+      else if (m[5] !== undefined) out += esc(m[5]) + '<span class="tok-def">' + esc(m[6]) + "</span>";
+      else if (m[7] !== undefined) out += '<span class="tok-kw">' + esc(m[7]) + "</span>";
+      last = TOKEN_RE.lastIndex;
+    }
+    out += esc(code.slice(last));
+    return out;
+  }
+
+  function collapse(v) { return v === "Unsure" ? null : (v === "Present" ? "P" : "N"); }
+  function rowMatch(r) {
+    var a = collapse(r.verdicts[state.A]), b = collapse(r.verdicts[state.B]);
+    return (a === null || b === null) ? null : a === b;
+  }
+  function counts(p) {
+    var mis = 0, rated = 0;
+    p.fm_rows.forEach(function (r) { var m = rowMatch(r); if (m !== null) { rated++; if (!m) mis++; } });
+    return { mis: mis, rated: rated };
+  }
+  function kappa(pairs) {
+    var n = pairs.length, aa = 0, bb = 0, ag = 0;
+    pairs.forEach(function (x) { if (x[0] === "P") aa++; if (x[1] === "P") bb++; if (x[0] === x[1]) ag++; });
+    var po = ag / n, pe = (aa / n) * (bb / n) + (1 - aa / n) * (1 - bb / n);
+    return pe === 1 ? NaN : (po - pe) / (1 - pe);
+  }
+
+  function dots(p) {
+    return p.fm_rows.map(function (r) {
+      var m = rowMatch(r);
+      var s = m === null ? "unrated" : (m ? "match" : "mismatch");
+      return '<div class="dot" data-s="' + s + '" title="' + r.display_id + ": " + esc(r.label) + '"></div>';
+    }).join("");
+  }
+
+  function renderStats() {
+    var mis = 0, rated = 0, pairs = [];
+    state.data.forEach(function (p) {
+      var c = counts(p); mis += c.mis; rated += c.rated;
+      p.fm_rows.forEach(function (r) {
+        var a = collapse(r.verdicts[state.A]), b = collapse(r.verdicts[state.B]);
+        if (a !== null && b !== null) pairs.push([a, b]);
+      });
+    });
+    var k = kappa(pairs);
+    document.getElementById("statChips").innerHTML =
+      '<div class="stat-chip"><b>' + esc(state.A) + "</b> vs <b>" + esc(state.B) + "</b></div>" +
+      '<div class="stat-chip"><b>' + rated + "</b> ratings compared</div>" +
+      '<div class="stat-chip"><b>' + mis + "</b> disagreements</div>" +
+      '<div class="stat-chip"><b>' + (rated ? ((rated - mis) / rated * 100).toFixed(1) : "0") + "%</b> agreement</div>" +
+      '<div class="stat-chip">&kappa; <b>' + (k === k ? k.toFixed(2) : "n/a") + "</b></div>";
+  }
+
+  function populateFilters() {
+    var agents = Array.from(new Set(state.data.map(function (p) { return p.agent; }))).sort();
+    var models = Array.from(new Set(state.data.map(function (p) { return p.model; }))).sort();
+    [["filterAgent", agents], ["filterModel", models]].forEach(function (c) {
+      var sel = document.getElementById(c[0]);
+      c[1].forEach(function (v) { var o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o); });
+    });
+  }
+
+  function filteredPipelines() {
+    return state.data.filter(function (p) {
+      return (!state.agent || p.agent === state.agent) && (!state.model || p.model === state.model);
+    }).slice().sort(function (a, b) {
+      return state.sortMismatch ? (counts(b).mis - counts(a).mis) : a.pipeline_id.localeCompare(b.pipeline_id);
+    });
+  }
+
+  function renderList() {
+    var list = filteredPipelines();
+    document.getElementById("pipelineList").innerHTML = list.map(function (p) {
+      var c = counts(p);
+      return '<button class="pipeline-item' + (state.selected === p.pipeline_id ? " active" : "") + '" data-id="' + p.pipeline_id + '">' +
+        '<div class="pi-top"><span class="pi-id">' + esc(p.task_id) + '</span><span class="pi-mismatch">' + c.mis + "/" + c.rated + "</span></div>" +
+        '<div class="pi-tags">' + esc(p.agent) + " &middot; " + esc(p.model) + "</div>" +
+        '<div class="dot-row">' + dots(p) + "</div></button>";
+    }).join("") || '<div class="empty-state">No pipelines match this filter.</div>';
+    Array.prototype.forEach.call(document.querySelectorAll(".pipeline-item"), function (btn) {
+      btn.addEventListener("click", function () {
+        state.selected = btn.getAttribute("data-id");
+        try { localStorage.setItem("judge-bench-selected", state.selected); } catch (e) {}
+        renderList(); renderDetail();
+      });
+    });
+    if (!state.selected && list.length) { state.selected = list[0].pipeline_id; renderDetail(); }
+  }
+
+  function raterBlock(key, r, p, first) {
+    var rt = byKey[key], v = r.verdicts[key];
+    var head = '<div class="human-note" style="margin-top:6px"><b>' + esc(key) + "</b> &mdash; " + v;
+    if (rt.kind === "human") {
+      var note = (first && p.notes_by[key]) ? "<div><b>" + esc(key) + " notes:</b> " + esc(p.notes_by[key]) + "</div>" : "";
+      return head + ' <span style="color:var(--text-faint)">(raw: “' + esc(r.raw[key] || "–") + "”)</span></div>" + note;
+    }
+    var j = r.judge_info[key] || {};
+    var body = j.reasoning ? '<div class="reasoning">' + esc(j.reasoning) + "</div>"
+      : '<div class="reasoning">' + (j.applicable === false ? "Gated out as not applicable (precondition not met)." : "No reasoning recorded.") + "</div>";
+    return head + "</div>" + body + (j.evidence ? '<div class="ev">' + esc(j.evidence) + "</div>" : "") +
+      '<div class="meta-row">severity ' + (j.severity == null ? "–" : j.severity) + " &middot; confidence " + esc(j.confidence || "–") + "</div>";
+  }
+
+  function renderDetail() {
+    var p = state.data.find(function (x) { return x.pipeline_id === state.selected; });
+    var detail = document.getElementById("detail");
+    if (!p) { detail.innerHTML = '<div class="empty-state">Select a pipeline from the list.</div>'; return; }
+    var c = counts(p);
+
+    var metaHtml =
+      '<div class="meta-card"><span class="task-id">' + esc(p.task_id) + "</span>" +
+      '<span class="meta-field">agent <b>' + esc(p.agent) + "</b></span>" +
+      '<span class="meta-field">model <b>' + esc(p.model) + "</b></span>" +
+      '<span class="meta-field">source <b>' + esc(p.source || "–") + "</b></span>" +
+      '<span class="score-pill' + (c.mis === 0 ? " clean" : "") + '">' + c.mis + " / " + c.rated + " disagree</span></div>";
+
+    var codeHtml =
+      '<div class="pane code-pane"><div class="pane-header">Code<span class="count">' + p.code.length.toLocaleString() +
+      ' chars</span><button class="copy-btn" id="copyCodeBtn">Copy</button></div>' +
+      "<pre><code>" + (p.code ? highlightPython(p.code) : "(no code)") + "</code></pre></div>";
+
+    var rowsHtml = p.fm_rows.map(function (r, idx) {
+      var m = rowMatch(r);
+      var mark = m === null ? "" : (m ? '<span class="match-mark ok">&#10003;</span>' : '<span class="match-mark bad">&#10007;</span>');
+      return '<div class="fm-row' + (m === false ? " is-mismatch" : "") + '">' +
+        '<div class="fm-row-head"><span class="fm-id">' + r.display_id + '</span><span class="fm-label">' + esc(r.label) + "</span>" +
+        '<span class="fm-verdicts">' +
+        '<span class="chip" data-v="' + r.verdicts[state.A] + '">' + esc(state.A) + ": " + r.verdicts[state.A] + "</span>" +
+        '<span class="chip" data-v="' + r.verdicts[state.B] + '">' + esc(state.B) + ": " + r.verdicts[state.B] + "</span></span>" + mark + "</div>" +
+        '<div class="fm-detail"><div class="def">' + esc(r.definition) + "</div>" +
+        raterBlock(state.A, r, p, idx === 0) + raterBlock(state.B, r, p, idx === 0) + "</div></div>";
+    }).join("");
+
+    var fmHtml =
+      '<div class="pane fm-pane"><div class="pane-header">Failure modes<span class="count">' + c.mis + " of " + c.rated + " disagree</span></div>" +
+      '<div class="legend"><span><span class="sw" style="background:var(--ok)"></span>match</span>' +
+      '<span><span class="sw" style="background:var(--bad)"></span>disagreement</span>' +
+      '<span><span class="sw" style="background:var(--chip-na-soft);border:1px solid var(--border)"></span>unrated</span></div>' +
+      '<div class="fm-pane-body">' + rowsHtml + "</div></div>";
+
+    detail.innerHTML = metaHtml + '<div class="panes">' + codeHtml + fmHtml + "</div>";
+
+    Array.prototype.forEach.call(document.querySelectorAll(".fm-row-head"), function (head) {
+      head.addEventListener("click", function () { head.parentElement.querySelector(".fm-detail").classList.toggle("open"); });
+    });
+    var copyBtn = document.getElementById("copyCodeBtn");
+    if (copyBtn) copyBtn.addEventListener("click", function () {
+      var finish = function (ok) { copyBtn.textContent = ok ? "Copied" : "Select text to copy"; setTimeout(function () { copyBtn.textContent = "Copy"; }, 1400); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(p.code).then(function () { finish(true); }, function () { finish(false); });
+      else finish(false);
+    });
+  }
+
+  function refresh() { renderStats(); renderList(); renderDetail(); }
+
+  function wireControls() {
+    ["A", "B"].forEach(function (side) {
+      var sel = document.getElementById("pick" + side);
+      state.raters.forEach(function (r) {
+        var o = document.createElement("option");
+        o.value = r.key; o.textContent = (side === "A" ? "Left: " : "Right: ") + r.key;
+        sel.appendChild(o);
+      });
+      sel.value = state[side];
+      sel.addEventListener("change", function (e) {
+        var other = side === "A" ? "B" : "A";
+        state[side] = e.target.value;
+        if (state[other] === state[side]) {   // never compare a rater with itself
+          state[other] = state.raters.map(function (r) { return r.key; }).filter(function (k) { return k !== state[side]; })[0];
+          document.getElementById("pick" + other).value = state[other];
+        }
+        try { localStorage.setItem("judge-bench-pair", state.A + "|" + state.B); } catch (err) {}
+        refresh();
+      });
+    });
+    document.getElementById("filterAgent").addEventListener("change", function (e) { state.agent = e.target.value; renderList(); });
+    document.getElementById("filterModel").addEventListener("change", function (e) { state.model = e.target.value; renderList(); });
+    document.getElementById("sortMismatch").addEventListener("change", function (e) { state.sortMismatch = e.target.checked; renderList(); });
+  }
+
+  fetch("dashboard_data.json")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      state.data = data.pipelines;
+      state.raters = data.raters;
+      data.raters.forEach(function (r) { byKey[r.key] = r; });
+      state.A = data.raters[0].key;
+      state.B = data.raters.filter(function (r) { return r.kind === "judge"; })[0].key;
+      try {
+        var pr = (localStorage.getItem("judge-bench-pair") || "").split("|");
+        if (byKey[pr[0]] && byKey[pr[1]] && pr[0] !== pr[1]) { state.A = pr[0]; state.B = pr[1]; }
+        var saved = localStorage.getItem("judge-bench-selected");
+        if (saved && state.data.some(function (p) { return p.pipeline_id === saved; })) state.selected = saved;
+      } catch (e) {}
+      populateFilters();
+      wireControls();
+      refresh();
+    })
+    .catch(function (err) {
+      document.getElementById("detail").innerHTML = '<div class="empty-state">Could not load dashboard_data.json: ' + esc(String(err)) + "</div>";
+    });
+})();
+</script>

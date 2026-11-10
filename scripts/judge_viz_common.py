@@ -65,9 +65,6 @@ MODELS = [
     {"key": "gemini-3.6-flash", "label": "Gemini-3.6"},
     {"key": "gemini-3.7-flash", "label": "Gemini-3.7"},
     {"key": "qwen3.5-4b", "label": "Qwen-4B"},
-    # Added 2026-09-24: OpenRouter-backed qwen-3.8-27b sweep, judged tonight
-    # (judge_v3_results/<agent>/qwen3.8-27b/, via result_dir()'s generic
-    # <agent>/<model> subdir case below -- same pattern as qwen3.5-4b).
     {"key": "qwen3.8-27b", "label": "Qwen-27B"},
 ]
 
